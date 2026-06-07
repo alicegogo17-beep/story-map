@@ -8,19 +8,19 @@
 - Windows
 - 최신 Chrome / Edge / Safari 권장
 
-기본 편집은 정적으로도 가능하지만, `웹 저장`과 `공유 링크` 기능은 `server.py`로 실행해야 합니다.
+기본 편집은 정적으로도 가능하고, `웹 저장`과 `공유 링크`는 Supabase를 연결하면 무료로 사용할 수 있습니다.
 
 ## 실행 방법
 
 ### macOS
 
 - 같은 폴더의 `스토리맵-열기.command`를 더블 클릭
-- 이 방식은 로컬 서버를 실행하고 `http://127.0.0.1:8765` 로 엽니다.
+- 또는 `index.html`을 브라우저로 열기
 
 ### Windows
 
 - 같은 폴더의 `스토리맵-열기.bat`를 더블 클릭
-- 이 방식은 로컬 서버를 실행하고 `http://127.0.0.1:8765` 로 엽니다.
+- 또는 `index.html`을 브라우저로 열기
 
 ## 다른 컴퓨터로 옮길 때
 
@@ -45,7 +45,7 @@
 - 중요 장면 별 표시
 - 더블 클릭 상세 편집
 - 맵 JSON 내보내기 / 불러오기
-- 웹 저장 / 공유 링크 복사
+- 저장 연결 설정 / 웹 저장 / 공유 링크 복사
 - 신리스트 / 시나리오 / Markdown 문서 내보내기
 
 ## 사용 방법
@@ -56,35 +56,63 @@
 4. 선택된 카드를 우클릭하면 `장면 추가`, `장면 삭제`, `중요`를 사용할 수 있습니다.
 5. 카드를 빠르게 두 번 클릭하면 상세 편집 카드가 열립니다.
 6. 카드 오른쪽 연결 탭을 드래그해서 다른 카드와 연결할 수 있습니다.
-7. `웹 저장` 버튼으로 서버에 맵을 저장할 수 있습니다.
-8. `공유 링크 복사` 버튼으로 현재 맵 링크를 복사할 수 있습니다.
-9. `맵 다운로드` 버튼을 우클릭하면 맵 / 신리스트 / 시나리오 / md 문서를 저장할 수 있습니다.
+7. `저장 연결 설정` 버튼을 눌러 Supabase Project URL과 anon key를 입력합니다.
+8. `웹 저장` 버튼으로 Supabase에 맵을 저장할 수 있습니다.
+9. `공유 링크 복사` 버튼으로 현재 맵 링크를 복사할 수 있습니다.
+10. `맵 다운로드` 버튼을 우클릭하면 맵 / 신리스트 / 시나리오 / md 문서를 저장할 수 있습니다.
 
 ## 공유 방식
 
-- 저장된 맵은 `story-map/shared_maps/` 폴더에 JSON으로 저장됩니다.
-- 링크는 `http://127.0.0.1:8765/?share=<ID>` 형태로 만들어집니다.
-- 로컬에서는 같은 컴퓨터에서 바로 다시 열 수 있고, 외부 공유용으로는 이 서버를 배포 환경에 올리면 됩니다.
+- 공유 데이터는 Supabase의 `story_maps` 테이블에 저장됩니다.
+- 링크는 `https://배포주소/?share=<ID>` 형태로 만들어집니다.
+- 이 링크를 다른 사람이 열어도 같은 맵을 불러올 수 있습니다.
 
-## 외부 공유 배포
+## Supabase 설정
 
-가장 쉬운 방법은 Render 같은 웹 서버에 올리는 것입니다.
+1. Supabase에서 새 프로젝트를 만듭니다.
+2. SQL Editor를 열고 [supabase-setup.sql](/Users/choeijin-uimaeg/Desktop/synopsis-to-scenario-main/story-map/supabase-setup.sql) 내용을 실행합니다.
+3. Project URL과 anon public key를 확인합니다.
+4. 앱에서 `저장 연결 설정` 버튼을 눌러 두 값을 입력합니다.
 
-이 저장소에는 이미 배포 설정 파일 [render.yaml](/Users/choeijin-uimaeg/Desktop/synopsis-to-scenario-main/render.yaml) 이 들어 있습니다.
+선택:
 
-배포 흐름:
+- 배포용으로는 [supabase-config.js](/Users/choeijin-uimaeg/Desktop/synopsis-to-scenario-main/story-map/supabase-config.js) 에 URL/anon key를 넣어도 됩니다.
+- 또는 앱을 처음 열었을 때 `저장 연결 설정`으로 브라우저에만 저장해도 됩니다.
 
-1. 이 저장소를 GitHub 등에 올립니다.
-2. Render에서 `New +` → `Blueprint`를 선택합니다.
-3. 저장소를 연결하면 `render.yaml` 을 읽어서 `story-map` 웹 서비스를 만듭니다.
-4. 배포가 끝나면 `https://...onrender.com` 주소가 생깁니다.
-5. 이후 `웹 저장` → `공유 링크 복사`를 누르면 그 주소 기반 공유 링크가 만들어집니다.
+중요:
 
-주의:
+- `공유 링크를 받은 다른 사람`도 바로 열 수 있게 하려면, 배포 전에 `supabase-config.js`에 Supabase URL과 anon key를 넣어두는 편이 가장 쉽습니다.
+- anon key는 공개용 키라서 프론트엔드에 들어가도 됩니다.
 
-- 공유 저장 데이터는 Render의 디스크(`/var/data`)에 저장되도록 설정했습니다.
-- 그래서 서비스를 지웠다가 다시 만들면 저장된 맵도 같이 사라질 수 있습니다.
-- 팀/상업용으로 오래 쓰려면 나중에는 DB(Supabase, PostgreSQL 등)로 바꾸는 것이 더 안전합니다.
+## 무료 배포
+
+Render에서는 `Web Service`가 아니라 `Static Site`로 올리면 됩니다.
+
+추천 흐름:
+
+1. GitHub에 이 프로젝트를 올립니다.
+2. [supabase-config.js](/Users/choeijin-uimaeg/Desktop/synopsis-to-scenario-main/story-map/supabase-config.js) 에 아래처럼 값을 넣고 GitHub에 다시 올립니다.
+
+```js
+window.STORY_MAP_SUPABASE = {
+  url: "https://YOUR-PROJECT.supabase.co",
+  anonKey: "YOUR_SUPABASE_ANON_KEY",
+};
+```
+
+3. Render에서 `New +` → `Static Site`
+4. 저장소를 연결합니다.
+5. 설정은 아래처럼 넣습니다.
+   - Build Command: 비워두기
+   - Publish Directory: `story-map`
+6. 배포된 주소에서 앱을 엽니다.
+7. 이제 `웹 저장`과 `공유 링크 복사`를 무료로 사용할 수 있습니다.
+
+Render 참고:
+
+- `Web Service`는 현재 방식에서는 불필요합니다.
+- `Starter` 같은 유료 플랜도 필요 없습니다.
+- `Static Site` + `Supabase` 조합이 무료 공유용 권장 방식입니다.
 
 ## JSON 형식
 

@@ -9,7 +9,9 @@ const CARD_HEIGHT = 126;
 const TITLE_MAX_LENGTH = 35;
 const SUMMARY_MAX_LENGTH = 40;
 const LOGLINE_MAX_LENGTH = 200;
-const SHARE_API_BASE = "/api/maps";
+const SUPABASE_URL_STORAGE_KEY = "story-map.supabase.url";
+const SUPABASE_ANON_KEY_STORAGE_KEY = "story-map.supabase.anon-key";
+const SUPABASE_TABLE = "story_maps";
 const HANDLE_CENTER_OFFSET = 0;
 const HANDLE_STEM_LENGTH = 18;
 const ARROW_TIP_OFFSET = 0;
@@ -141,6 +143,7 @@ const state = {
 const elements = {
   storyTitle: document.getElementById("story-title"),
   storyLogline: document.getElementById("story-logline"),
+  storageSettingsBtn: document.getElementById("storage-settings-btn"),
   saveOnlineBtn: document.getElementById("save-online-btn"),
   shareLinkBtn: document.getElementById("share-link-btn"),
   shareStatus: document.getElementById("share-status"),
@@ -261,8 +264,115 @@ function normalizeLogline(value) {
     .join("\n");
 }
 
+function normalizeSupabaseUrl(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function getSupabaseConfig() {
+  const runtimeConfig = window.STORY_MAP_SUPABASE || {};
+  const storedUrl = localStorage.getItem(SUPABASE_URL_STORAGE_KEY) || "";
+  const storedAnonKey = localStorage.getItem(SUPABASE_ANON_KEY_STORAGE_KEY) || "";
+  const url = normalizeSupabaseUrl(runtimeConfig.url || storedUrl);
+  const anonKey = String(runtimeConfig.anonKey || storedAnonKey || "").trim();
+
+  return {
+    url,
+    anonKey,
+    ready: Boolean(url && anonKey),
+  };
+}
+
+function saveSupabaseConfig(url, anonKey) {
+  const normalizedUrl = normalizeSupabaseUrl(url);
+  const normalizedKey = String(anonKey || "").trim();
+  localStorage.setItem(SUPABASE_URL_STORAGE_KEY, normalizedUrl);
+  localStorage.setItem(SUPABASE_ANON_KEY_STORAGE_KEY, normalizedKey);
+}
+
+function clearSupabaseConfig() {
+  localStorage.removeItem(SUPABASE_URL_STORAGE_KEY);
+  localStorage.removeItem(SUPABASE_ANON_KEY_STORAGE_KEY);
+}
+
+function configureSupabaseConnection() {
+  const current = getSupabaseConfig();
+  const nextUrl = window.prompt(
+    "Supabase Project URL을 입력하세요.",
+    current.url || ""
+  );
+  if (nextUrl === null) {
+    return false;
+  }
+
+  const nextAnonKey = window.prompt(
+    "Supabase anon public key를 입력하세요.",
+    current.anonKey || ""
+  );
+  if (nextAnonKey === null) {
+    return false;
+  }
+
+  if (!nextUrl.trim() || !nextAnonKey.trim()) {
+    clearSupabaseConfig();
+    setShareStatus("저장 연결 설정이 비어 있습니다.", "default");
+    syncMapMetaInputs();
+    return false;
+  }
+
+  saveSupabaseConfig(nextUrl, nextAnonKey);
+  setShareStatus("저장 연결 설정을 저장했습니다.", "success");
+  syncMapMetaInputs();
+  return true;
+}
+
+function ensureSupabaseConfig() {
+  const config = getSupabaseConfig();
+  if (config.ready) {
+    return config;
+  }
+
+  const configured = configureSupabaseConnection();
+  if (!configured) {
+    throw new Error("Supabase 저장 연결 설정이 필요합니다.");
+  }
+
+  const nextConfig = getSupabaseConfig();
+  if (!nextConfig.ready) {
+    throw new Error("Supabase 설정이 올바르지 않습니다.");
+  }
+
+  return nextConfig;
+}
+
+function createShareId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  }
+  return `map${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildSupabaseHeaders(config, { prefer = "" } = {}) {
+  const headers = {
+    apikey: config.anonKey,
+    Authorization: `Bearer ${config.anonKey}`,
+    "Content-Type": "application/json",
+  };
+  if (prefer) {
+    headers.Prefer = prefer;
+  }
+  return headers;
+}
+
+function buildSupabaseUrl(config, path, params = {}) {
+  const url = new URL(`${config.url}/rest/v1/${path}`);
+  Object.entries(params).forEach(([key, value]) => {
+    url.searchParams.set(key, value);
+  });
+  return url.toString();
+}
+
 function isWebSaveAvailable() {
-  return window.location.protocol.startsWith("http");
+  return Boolean(window.location.protocol.startsWith("http"));
 }
 
 function setShareStatus(message, tone = "default") {
@@ -284,6 +394,7 @@ function getShareUrl(shareId = state.shareId) {
 
 function updateShareControls() {
   const available = isWebSaveAvailable();
+  const config = getSupabaseConfig();
   if (elements.saveOnlineBtn) {
     elements.saveOnlineBtn.disabled = !available;
   }
@@ -291,7 +402,11 @@ function updateShareControls() {
     elements.shareLinkBtn.disabled = !available;
   }
   if (!available) {
-    setShareStatus("웹 저장/공유는 서버로 열었을 때 사용할 수 있습니다.");
+    setShareStatus("웹 저장/공유는 HTTP로 열린 페이지에서 사용할 수 있습니다.");
+    return;
+  }
+  if (!config.ready) {
+    setShareStatus("저장 연결 설정이 필요합니다.");
     return;
   }
   if (state.shareId) {
@@ -2009,23 +2124,34 @@ function resetMap() {
 
 async function saveMapOnline() {
   if (!isWebSaveAvailable()) {
-    alert("웹 저장은 서버로 실행한 스토리맵에서 사용할 수 있습니다.");
+    alert("웹 저장은 HTTP로 열린 스토리맵에서 사용할 수 있습니다.");
     return null;
   }
 
+  const config = ensureSupabaseConfig();
   setShareStatus("웹에 저장하는 중...", "pending");
+  if (!state.shareId) {
+    state.shareId = createShareId();
+  }
 
   const response = await fetch(
-    state.shareId ? `${SHARE_API_BASE}/${encodeURIComponent(state.shareId)}` : SHARE_API_BASE,
+    buildSupabaseUrl(config, SUPABASE_TABLE, {
+      on_conflict: "share_id",
+      select: "share_id,updated_at",
+    }),
     {
-      method: state.shareId ? "PUT" : "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        shareId: state.shareId,
-        map: state.map,
+      method: "POST",
+      headers: buildSupabaseHeaders(config, {
+        prefer: "resolution=merge-duplicates,return=representation",
       }),
+      body: JSON.stringify([
+        {
+          share_id: state.shareId,
+          title: state.map.title || "",
+          map_json: state.map,
+          updated_at: new Date().toISOString(),
+        },
+      ]),
     }
   );
 
@@ -2034,8 +2160,8 @@ async function saveMapOnline() {
     throw new Error("웹 저장에 실패했습니다.");
   }
 
-  const payload = await response.json();
-  state.shareId = payload.shareId || state.shareId;
+  const [payload] = await response.json();
+  state.shareId = payload?.share_id || state.shareId;
   const shareUrl = getShareUrl();
   if (shareUrl) {
     window.history.replaceState({}, "", shareUrl);
@@ -2047,7 +2173,7 @@ async function saveMapOnline() {
 
 async function copyShareLink() {
   if (!isWebSaveAvailable()) {
-    alert("공유 링크는 서버로 실행한 스토리맵에서 사용할 수 있습니다.");
+    alert("공유 링크는 HTTP로 열린 스토리맵에서 사용할 수 있습니다.");
     return;
   }
 
@@ -2080,16 +2206,37 @@ async function loadSharedMapFromUrl() {
     return false;
   }
 
+  const config = getSupabaseConfig();
+  if (!config.ready) {
+    setShareStatus("공유 맵을 열려면 저장 연결 설정 또는 배포용 Supabase 설정이 필요합니다.", "error");
+    return false;
+  }
+
   setShareStatus("공유 맵을 불러오는 중...", "pending");
-  const response = await fetch(`${SHARE_API_BASE}/${encodeURIComponent(shareId)}`);
+  const response = await fetch(
+    buildSupabaseUrl(config, SUPABASE_TABLE, {
+      select: "share_id,map_json",
+      share_id: `eq.${shareId}`,
+      limit: "1",
+    }),
+    {
+      method: "GET",
+      headers: buildSupabaseHeaders(config),
+    }
+  );
   if (!response.ok) {
     setShareStatus("공유 맵을 찾지 못했습니다.", "error");
     throw new Error("공유 맵을 찾지 못했습니다.");
   }
 
-  const payload = await response.json();
-  state.map = validateMapData(payload.map || {});
-  state.shareId = payload.shareId || shareId;
+  const rows = await response.json();
+  const payload = rows?.[0];
+  if (!payload?.map_json) {
+    setShareStatus("공유 맵을 찾지 못했습니다.", "error");
+    throw new Error("공유 맵을 찾지 못했습니다.");
+  }
+  state.map = validateMapData(payload.map_json || {});
+  state.shareId = payload.share_id || shareId;
   state.selectedNodeId = state.map.nodes[0]?.key || null;
   state.lastSelectedNodeId = null;
   state.mergeSourceNodeId = null;
@@ -2113,6 +2260,9 @@ function escapeHtml(value) {
 
 elements.storyTitle.addEventListener("input", updateMapMeta);
 elements.storyLogline.addEventListener("input", updateMapMeta);
+elements.storageSettingsBtn?.addEventListener("click", () => {
+  configureSupabaseConnection();
+});
 elements.emptyAddSceneBtn.addEventListener("click", () => {
   addSceneFromParent(null, { branch: false });
 });
