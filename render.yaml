@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: story-map
+    env: python
+    plan: free
+    buildCommand: "true"
+    startCommand: "python story-map/server.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: STORY_MAP_DATA_DIR
+        value: /var/data/story-map
+    disk:
+      name: story-map-data
+      mountPath: /var/data
+      sizeGB: 1

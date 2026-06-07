@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Story Map</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <main class="workspace">
+      <section class="map-panel">
+        <div class="map-topbar">
+          <div class="map-header">
+            <div class="map-header-main">
+              <input
+                id="story-title"
+                class="map-title-input"
+                type="text"
+                maxlength="35"
+                placeholder="제목"
+              >
+              <textarea
+                id="story-logline"
+                class="map-logline-input"
+                maxlength="200"
+                rows="2"
+                placeholder="이야기의 로그라인"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="map-toolbar panel-block">
+            <div class="toolbar-row toolbar-row-primary">
+              <button id="save-online-btn" class="primary-btn compact-btn" type="button">웹 저장</button>
+              <button id="share-link-btn" class="secondary-btn compact-btn" type="button">공유 링크 복사</button>
+            </div>
+            <div class="toolbar-row toolbar-row-primary">
+              <label class="file-label compact-btn" for="import-input">맵 불러오기</label>
+              <button id="new-map-btn" class="secondary-btn compact-btn">새 맵 만들기</button>
+            </div>
+            <div class="toolbar-row toolbar-row-secondary">
+              <button id="export-btn" class="secondary-btn compact-btn" type="button">맵 다운로드</button>
+              <button id="undo-btn" class="icon-btn" disabled aria-label="뒤로 가기" title="뒤로 가기">⤺</button>
+              <button id="redo-btn" class="icon-btn" disabled aria-label="앞으로 가기" title="앞으로 가기">→</button>
+              <input id="import-input" type="file" accept=".json,application/json">
+            </div>
+            <p id="share-status" class="toolbar-status" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <div id="map-canvas" class="map-canvas">
+          <svg id="edge-layer" class="edge-layer" aria-hidden="true"></svg>
+          <div id="node-layer" class="node-layer"></div>
+          <div id="empty-state" class="empty-state">
+            <h3>장면을 추가하세요.</h3>
+            <button id="empty-add-scene-btn" type="button" class="empty-add-btn" aria-label="첫 번째 장면 추가">+</button>
+          </div>
+        </div>
+
+        <div id="scene-context-menu" class="scene-context-menu" hidden>
+          <button id="context-add-scene" type="button" class="scene-context-action">장면 추가</button>
+          <button id="context-delete-scene" type="button" class="scene-context-action danger">장면 삭제</button>
+          <button id="context-toggle-important" type="button" class="scene-context-action">중요</button>
+        </div>
+
+        <div id="export-context-menu" class="scene-context-menu" hidden>
+          <button id="context-export-map" type="button" class="scene-context-action">맵 내보내기</button>
+          <button id="context-export-scene-list" type="button" class="scene-context-action">신리스트</button>
+          <button id="context-export-scenario" type="button" class="scene-context-action">시나리오</button>
+          <button id="context-export-md" type="button" class="scene-context-action">md 문서</button>
+        </div>
+
+        <div id="scene-hover-tip" class="scene-hover-tip" hidden>우클릭으로 추가/삭제, 더블 클릭하면 상세 편집 카드를 엽니다.</div>
+        <div id="export-hover-tip" class="scene-hover-tip export-hover-tip" hidden>우클릭</div>
+
+        <div id="scene-preview-overlay" class="scene-preview-overlay" hidden>
+          <div id="scene-preview-backdrop" class="scene-preview-backdrop"></div>
+          <article class="scene-preview-card" role="dialog" aria-modal="true" aria-label="장면 상세 편집 카드">
+            <div class="scene-preview-head">
+              <span id="scene-preview-id" class="scene-badge scene-preview-badge"></span>
+              <div class="scene-preview-head-actions">
+                <button id="scene-preview-undo" type="button" class="scene-preview-icon-btn" aria-label="상세 카드 되돌리기" title="되돌리기">⤺</button>
+                <button id="scene-preview-redo" type="button" class="scene-preview-icon-btn" aria-label="상세 카드 앞으로 가기" title="앞으로 가기">⤻</button>
+                <button id="scene-preview-close" type="button" class="scene-preview-close" aria-label="상세 카드 닫기">닫기</button>
+              </div>
+            </div>
+            <label class="field-label" for="scene-preview-title-input">씬의 정보 (35자)</label>
+            <input id="scene-preview-title-input" class="text-input scene-preview-input" type="text" maxlength="35" placeholder="씬의 정보">
+
+            <label class="field-label" for="scene-preview-summary-input">짧은 요약 (40자)</label>
+            <textarea id="scene-preview-summary-input" class="text-area compact scene-preview-input" maxlength="40" placeholder="요약 없음"></textarea>
+
+            <label class="field-label" for="scene-preview-detail-input">상세 스토리</label>
+            <textarea id="scene-preview-detail-input" class="text-area scene-preview-detail-input scene-preview-input" placeholder="상세 스토리가 아직 없습니다."></textarea>
+
+            <div class="inline-action-buttons scene-preview-actions">
+              <button id="scene-preview-save" type="button" class="primary-btn">상세 카드에서 저장</button>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
