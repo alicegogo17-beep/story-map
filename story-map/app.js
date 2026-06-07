@@ -140,6 +140,9 @@ const state = {
   },
 };
 
+let supabaseClientCache = null;
+let supabaseClientCacheKey = "";
+
 const elements = {
   storyTitle: document.getElementById("story-title"),
   storyLogline: document.getElementById("story-logline"),
@@ -351,24 +354,30 @@ function createShareId() {
   return `map${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildSupabaseHeaders(config, { prefer = "" } = {}) {
-  const headers = {
-    apikey: config.anonKey,
-    Authorization: `Bearer ${config.anonKey}`,
-    "Content-Type": "application/json",
-  };
-  if (prefer) {
-    headers.Prefer = prefer;
+function getSupabaseClient(config = getSupabaseConfig()) {
+  if (!config.ready) {
+    throw new Error("Supabase 저장 연결 설정이 필요합니다.");
   }
-  return headers;
-}
 
-function buildSupabaseUrl(config, path, params = {}) {
-  const url = new URL(`${config.url}/rest/v1/${path}`);
-  Object.entries(params).forEach(([key, value]) => {
-    url.searchParams.set(key, value);
+  const key = `${config.url}::${config.anonKey}`;
+  if (supabaseClientCache && supabaseClientCacheKey === key) {
+    return supabaseClientCache;
+  }
+
+  const factory = window.supabase?.createClient;
+  if (typeof factory !== "function") {
+    throw new Error("Supabase 클라이언트를 불러오지 못했습니다.");
+  }
+
+  supabaseClientCache = factory(config.url, config.anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
   });
-  return url.toString();
+  supabaseClientCacheKey = key;
+  return supabaseClientCache;
 }
 
 function isWebSaveAvailable() {
@@ -2129,38 +2138,34 @@ async function saveMapOnline() {
   }
 
   const config = ensureSupabaseConfig();
+  const client = getSupabaseClient(config);
   setShareStatus("웹에 저장하는 중...", "pending");
   if (!state.shareId) {
     state.shareId = createShareId();
   }
 
-  const response = await fetch(
-    buildSupabaseUrl(config, SUPABASE_TABLE, {
-      on_conflict: "share_id",
-      select: "share_id,updated_at",
-    }),
-    {
-      method: "POST",
-      headers: buildSupabaseHeaders(config, {
-        prefer: "resolution=merge-duplicates,return=representation",
-      }),
-      body: JSON.stringify([
-        {
-          share_id: state.shareId,
-          title: state.map.title || "",
-          map_json: state.map,
-          updated_at: new Date().toISOString(),
-        },
-      ]),
-    }
-  );
+  const { data, error } = await client
+    .from(SUPABASE_TABLE)
+    .upsert(
+      {
+        share_id: state.shareId,
+        title: state.map.title || "",
+        map_json: state.map,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "share_id",
+      }
+    )
+    .select("share_id,updated_at")
+    .single();
 
-  if (!response.ok) {
+  if (error) {
     setShareStatus("웹 저장에 실패했습니다.", "error");
-    throw new Error("웹 저장에 실패했습니다.");
+    throw new Error(error.message || "웹 저장에 실패했습니다.");
   }
 
-  const [payload] = await response.json();
+  const payload = data;
   state.shareId = payload?.share_id || state.shareId;
   const shareUrl = getShareUrl();
   if (shareUrl) {
@@ -2211,26 +2216,21 @@ async function loadSharedMapFromUrl() {
     setShareStatus("공유 맵을 열려면 저장 연결 설정 또는 배포용 Supabase 설정이 필요합니다.", "error");
     return false;
   }
+  const client = getSupabaseClient(config);
 
   setShareStatus("공유 맵을 불러오는 중...", "pending");
-  const response = await fetch(
-    buildSupabaseUrl(config, SUPABASE_TABLE, {
-      select: "share_id,map_json",
-      share_id: `eq.${shareId}`,
-      limit: "1",
-    }),
-    {
-      method: "GET",
-      headers: buildSupabaseHeaders(config),
-    }
-  );
-  if (!response.ok) {
+  const { data, error } = await client
+    .from(SUPABASE_TABLE)
+    .select("share_id,map_json")
+    .eq("share_id", shareId)
+    .single();
+
+  if (error) {
     setShareStatus("공유 맵을 찾지 못했습니다.", "error");
-    throw new Error("공유 맵을 찾지 못했습니다.");
+    throw new Error(error.message || "공유 맵을 찾지 못했습니다.");
   }
 
-  const rows = await response.json();
-  const payload = rows?.[0];
+  const payload = data;
   if (!payload?.map_json) {
     setShareStatus("공유 맵을 찾지 못했습니다.", "error");
     throw new Error("공유 맵을 찾지 못했습니다.");
