@@ -9,9 +9,7 @@ const CARD_HEIGHT = 126;
 const TITLE_MAX_LENGTH = 35;
 const SUMMARY_MAX_LENGTH = 40;
 const LOGLINE_MAX_LENGTH = 200;
-const SUPABASE_URL_STORAGE_KEY = "story-map.supabase.url";
-const SUPABASE_ANON_KEY_STORAGE_KEY = "story-map.supabase.anon-key";
-const SUPABASE_TABLE = "story_maps";
+const SHARE_API_BASE = "/api/maps";
 const HANDLE_CENTER_OFFSET = 0;
 const HANDLE_STEM_LENGTH = 18;
 const ARROW_TIP_OFFSET = 0;
@@ -140,9 +138,6 @@ const state = {
   },
 };
 
-let supabaseClientCache = null;
-let supabaseClientCacheKey = "";
-
 const elements = {
   storyTitle: document.getElementById("story-title"),
   storyLogline: document.getElementById("story-logline"),
@@ -267,84 +262,10 @@ function normalizeLogline(value) {
     .join("\n");
 }
 
-function normalizeSupabaseUrl(value) {
-  return String(value || "").trim().replace(/\/+$/, "");
-}
-
-function getSupabaseConfig() {
-  const runtimeConfig = window.STORY_MAP_SUPABASE || {};
-  const storedUrl = localStorage.getItem(SUPABASE_URL_STORAGE_KEY) || "";
-  const storedAnonKey = localStorage.getItem(SUPABASE_ANON_KEY_STORAGE_KEY) || "";
-  const url = normalizeSupabaseUrl(runtimeConfig.url || storedUrl);
-  const anonKey = String(runtimeConfig.anonKey || storedAnonKey || "").trim();
-
-  return {
-    url,
-    anonKey,
-    ready: Boolean(url && anonKey),
-  };
-}
-
-function saveSupabaseConfig(url, anonKey) {
-  const normalizedUrl = normalizeSupabaseUrl(url);
-  const normalizedKey = String(anonKey || "").trim();
-  localStorage.setItem(SUPABASE_URL_STORAGE_KEY, normalizedUrl);
-  localStorage.setItem(SUPABASE_ANON_KEY_STORAGE_KEY, normalizedKey);
-}
-
-function clearSupabaseConfig() {
-  localStorage.removeItem(SUPABASE_URL_STORAGE_KEY);
-  localStorage.removeItem(SUPABASE_ANON_KEY_STORAGE_KEY);
-}
-
 function configureSupabaseConnection() {
-  const current = getSupabaseConfig();
-  const nextUrl = window.prompt(
-    "Supabase Project URL을 입력하세요.",
-    current.url || ""
-  );
-  if (nextUrl === null) {
-    return false;
-  }
-
-  const nextAnonKey = window.prompt(
-    "Supabase anon public key를 입력하세요.",
-    current.anonKey || ""
-  );
-  if (nextAnonKey === null) {
-    return false;
-  }
-
-  if (!nextUrl.trim() || !nextAnonKey.trim()) {
-    clearSupabaseConfig();
-    setShareStatus("저장 연결 설정이 비어 있습니다.", "default");
-    syncMapMetaInputs();
-    return false;
-  }
-
-  saveSupabaseConfig(nextUrl, nextAnonKey);
-  setShareStatus("저장 연결 설정을 저장했습니다.", "success");
+  window.alert("배포된 서버가 저장 연결을 관리합니다. 저장이 안 되면 서버 환경변수를 확인해야 합니다.");
+  setShareStatus("배포된 서버의 저장 연결 설정을 사용합니다.", "default");
   syncMapMetaInputs();
-  return true;
-}
-
-function ensureSupabaseConfig() {
-  const config = getSupabaseConfig();
-  if (config.ready) {
-    return config;
-  }
-
-  const configured = configureSupabaseConnection();
-  if (!configured) {
-    throw new Error("Supabase 저장 연결 설정이 필요합니다.");
-  }
-
-  const nextConfig = getSupabaseConfig();
-  if (!nextConfig.ready) {
-    throw new Error("Supabase 설정이 올바르지 않습니다.");
-  }
-
-  return nextConfig;
 }
 
 function createShareId() {
@@ -352,32 +273,6 @@ function createShareId() {
     return window.crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   }
   return `map${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function getSupabaseClient(config = getSupabaseConfig()) {
-  if (!config.ready) {
-    throw new Error("Supabase 저장 연결 설정이 필요합니다.");
-  }
-
-  const key = `${config.url}::${config.anonKey}`;
-  if (supabaseClientCache && supabaseClientCacheKey === key) {
-    return supabaseClientCache;
-  }
-
-  const factory = window.supabase?.createClient;
-  if (typeof factory !== "function") {
-    throw new Error("Supabase 클라이언트를 불러오지 못했습니다.");
-  }
-
-  supabaseClientCache = factory(config.url, config.anonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-  supabaseClientCacheKey = key;
-  return supabaseClientCache;
 }
 
 function isWebSaveAvailable() {
@@ -403,7 +298,6 @@ function getShareUrl(shareId = state.shareId) {
 
 function updateShareControls() {
   const available = isWebSaveAvailable();
-  const config = getSupabaseConfig();
   if (elements.saveOnlineBtn) {
     elements.saveOnlineBtn.disabled = !available;
   }
@@ -412,10 +306,6 @@ function updateShareControls() {
   }
   if (!available) {
     setShareStatus("웹 저장/공유는 HTTP로 열린 페이지에서 사용할 수 있습니다.");
-    return;
-  }
-  if (!config.ready) {
-    setShareStatus("저장 연결 설정이 필요합니다.");
     return;
   }
   if (state.shareId) {
@@ -2137,36 +2027,42 @@ async function saveMapOnline() {
     return null;
   }
 
-  const config = ensureSupabaseConfig();
-  const client = getSupabaseClient(config);
   setShareStatus("웹에 저장하는 중...", "pending");
-  if (!state.shareId) {
-    state.shareId = createShareId();
-  }
-
-  const { data, error } = await client
-    .from(SUPABASE_TABLE)
-    .upsert(
-      {
-        share_id: state.shareId,
-        title: state.map.title || "",
-        map_json: state.map,
-        updated_at: new Date().toISOString(),
+  const response = await fetch(
+    state.shareId ? `${SHARE_API_BASE}/${encodeURIComponent(state.shareId)}` : SHARE_API_BASE,
+    {
+      method: state.shareId ? "PUT" : "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-      {
-        onConflict: "share_id",
-      }
-    )
-    .select("share_id,updated_at")
-    .single();
+      body: JSON.stringify({
+        shareId: state.shareId || null,
+        map: state.map,
+      }),
+    }
+  );
 
-  if (error) {
+  if (!response.ok) {
+    let message = "웹 저장에 실패했습니다.";
+    try {
+      const payload = await response.json();
+      const errorText =
+        payload?.error?.message ||
+        payload?.error?.error_description ||
+        payload?.error ||
+        payload?.message;
+      if (errorText) {
+        message = `웹 저장에 실패했습니다: ${typeof errorText === "string" ? errorText : JSON.stringify(errorText)}`;
+      }
+    } catch (_error) {
+      // Ignore parsing errors and show default message.
+    }
     setShareStatus("웹 저장에 실패했습니다.", "error");
-    throw new Error(error.message || "웹 저장에 실패했습니다.");
+    throw new Error(message);
   }
 
-  const payload = data;
-  state.shareId = payload?.share_id || state.shareId;
+  const payload = await response.json();
+  state.shareId = payload?.shareId || state.shareId;
   const shareUrl = getShareUrl();
   if (shareUrl) {
     window.history.replaceState({}, "", shareUrl);
@@ -2211,32 +2107,20 @@ async function loadSharedMapFromUrl() {
     return false;
   }
 
-  const config = getSupabaseConfig();
-  if (!config.ready) {
-    setShareStatus("공유 맵을 열려면 저장 연결 설정 또는 배포용 Supabase 설정이 필요합니다.", "error");
-    return false;
-  }
-  const client = getSupabaseClient(config);
-
   setShareStatus("공유 맵을 불러오는 중...", "pending");
-  const { data, error } = await client
-    .from(SUPABASE_TABLE)
-    .select("share_id,map_json")
-    .eq("share_id", shareId)
-    .single();
-
-  if (error) {
-    setShareStatus("공유 맵을 찾지 못했습니다.", "error");
-    throw new Error(error.message || "공유 맵을 찾지 못했습니다.");
-  }
-
-  const payload = data;
-  if (!payload?.map_json) {
+  const response = await fetch(`${SHARE_API_BASE}/${encodeURIComponent(shareId)}`);
+  if (!response.ok) {
     setShareStatus("공유 맵을 찾지 못했습니다.", "error");
     throw new Error("공유 맵을 찾지 못했습니다.");
   }
-  state.map = validateMapData(payload.map_json || {});
-  state.shareId = payload.share_id || shareId;
+
+  const payload = await response.json();
+  if (!payload?.map) {
+    setShareStatus("공유 맵을 찾지 못했습니다.", "error");
+    throw new Error("공유 맵을 찾지 못했습니다.");
+  }
+  state.map = validateMapData(payload.map || {});
+  state.shareId = payload.shareId || shareId;
   state.selectedNodeId = state.map.nodes[0]?.key || null;
   state.lastSelectedNodeId = null;
   state.mergeSourceNodeId = null;
